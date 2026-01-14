@@ -1,0 +1,14 @@
+[project]
+name = "test"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.12"
+dependencies = [
+    "duckdb>=1.4.3",
+    "pandas",
+    "pymysql",
+    "pyarrow",
+    "pyyaml",
+    "sqlalchemy",
+    "pandas-stubs~=2.3.3",
+]
