@@ -7,6 +7,8 @@ import pandas as pd
 import yaml
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from sqlalchemy import create_engine
+from sqlalchemy import text
+
 
 from util.html_cleaner import clean_html
 
@@ -20,7 +22,7 @@ PARQUET_DIR = Path("/Volumes/Storage/data/parquet_file")
 PARQUET_DIR.mkdir(parents=True, exist_ok=True)
 
 # JSONL 输出目录
-JSONL_DIR = Path("/Volumes/Storage/data/jsonl_clean")
+JSONL_DIR = Path("/Volumes/Storage/data/trains_jsonl")
 JSONL_DIR.mkdir(parents=True, exist_ok=True)
 
 # 使用配置文件中的连接信息（SQLAlchemy Engine，pandas 读 SQL 更稳定）
@@ -32,7 +34,7 @@ _db = quote_plus(str(config["database"]))
 engine = create_engine(f"mysql+pymysql://{_user}:{_password}@{_host}:{_port}/{_db}?charset=utf8mb4")
 
 # 2️⃣ 分批读取数据并写入 Parquet
-batch_size = 10000
+batch_size = 100000
 table_name = 't_articlecontent'
 parquet_files = []
 
@@ -40,6 +42,65 @@ parquet_files = []
 def _write_parquet(df: pd.DataFrame, parquet_path: Path) -> str:
     df.to_parquet(parquet_path, index=False)
     return str(parquet_path)
+
+def execute_jsonl_stream(start_id: int = 0) -> None:
+    last_id = int(start_id)
+    total = 0
+    part_num = 0
+
+    print(f"[jsonl] start -> dir={JSONL_DIR}")
+
+    while True:
+        sql = text(f"""
+            SELECT id, content
+            FROM {table_name}
+            WHERE id > :last_id AND content != ''
+            ORDER BY id
+            LIMIT :limit
+        """)
+
+        with engine.connect().execution_options(stream_results=True) as conn:
+            result = conn.execute(sql, {
+                "last_id": last_id,
+                "limit": batch_size
+            })
+
+            rows = result.fetchmany(1000)  # 每次只拿1000条进内存
+            if not rows:
+                break
+
+            jsonl_path = JSONL_DIR / f"data_{part_num}.jsonl"
+            with open(jsonl_path, "w", encoding="utf-8") as f:
+                batch_count = 0
+
+                while rows:
+                    for row in rows:
+                        _id = int(row.id)
+                        content = row.content
+                        obj = {"id": _id, "content": content}
+                        f.write(json.dumps(obj, ensure_ascii=False) + "\n")
+
+                        last_id = _id
+                        batch_count += 1
+                        total += 1
+
+                    rows = result.fetchmany(1000)
+
+            print(
+                f"[jsonl] wrote file={jsonl_path}, "
+                f"batch_rows={batch_count}, total={total}, last_id={last_id}"
+            )
+            part_num += 1
+
+        if batch_count < batch_size:
+            break
+
+    engine.dispose()
+    print(f"[jsonl] done, total={total}")
+
+
+
+
 
 
 def execute_jsonl(start_id: int = 0) -> None:
@@ -63,10 +124,7 @@ def execute_jsonl(start_id: int = 0) -> None:
         with open(jsonl_path, "w", encoding="utf-8") as f:
             written_in_batch = 0
             for _id, content in zip(df["id"].tolist(), df["content"].tolist()):
-                cleaned = clean_html(str(content))
-                if not cleaned:
-                    continue  # 清洗后为空，跳过这条
-                obj = {"id": int(_id), "content": cleaned}
+                obj = {"id": int(_id), "content": content}
                 f.write(json.dumps(obj, ensure_ascii=False) + "\n")
                 written_in_batch += 1
                 total += 1
@@ -155,4 +213,5 @@ def execute2():
 if __name__ == '__main__':
     # execute1()
     # execute2()
-    execute_jsonl(0)
+    # execute_jsonl(0)
+    execute_jsonl_stream(0)
