@@ -11,4 +11,6 @@ dependencies = [
     "pyyaml",
     "sqlalchemy",
     "pandas-stubs~=2.3.3",
+    "psycopg2-binary>=2.9.11",
+    "bleach>=6.3.0",
 ]

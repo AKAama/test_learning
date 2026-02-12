@@ -1,16 +1,13 @@
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from urllib.parse import quote_plus
 
 import duckdb
 import pandas as pd
 import yaml
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from sqlalchemy import create_engine
 from sqlalchemy import text
-
-
-from util.html_cleaner import clean_html
 
 # 读取配置文件
 config_path = Path(__file__).parent.parent / 'config' / 'config.yaml'
